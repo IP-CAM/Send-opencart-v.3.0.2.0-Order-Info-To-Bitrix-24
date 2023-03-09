@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modification>
+	<name>Send Order Info To Bitrix 24</name>
+	<code>Send Order Info To Bitrix 24</code>
+	<version>1.0.0</version>
+	<author>Ya</author>
+	<file path="catalog/model/checkout/order.php">
+		<operation>
+			<search><![CDATA[$data['vouchers'] = array();]]></search>
+			<add position="before"><![CDATA[
+				$products_txt = array();
+				foreach($data['products'] as $productrow){
+					$option_txt = array();
+					foreach($productrow['option'] as $optionrow){
+						$option_txt[] = "- ".$optionrow['name'].": ".$optionrow['value'];
+					}
+					$protucts_txt[] = "<li><a target='_blank' href='".$this->url->link('product/product', '&product_id=' . $productrow['product_id'] )."'>".$productrow['name']." ".$productrow['quantity']." x ".$productrow['price']." = ".$productrow['total']."<br>".implode("<br>", $option_txt)."</a></li>";
+				}
+				$protucts_txt = implode("", $protucts_txt);
+
+			$postData = array(
+				'TITLE' => " Заказ #".$order_id." с сайта ".$order_info['store_name'],
+				'OPPORTINUTY' => $order_info['total'],
+				'NAME' => $order_info['firstname'],
+				'LAST_NAME' => $order_info['lastname'],
+				'PHONE_MOBILE' => $order_info['telephone'],
+				'EMAIL_HOME' => $order_info['email'],
+				'ADDRESS' => $order_info['shipping_zone'].", ".$order_info['shipping_city'].", ".$order_info['shipping_postcode'].", ул.".$order_info['shipping_address_1'],
+				'SOURCE_ID' => WEB,
+				'SOURCE_DESCRIPTION' => "Сайт ".$order_info['store_name'],
+				'CURRENCY_ID' => RUR,
+				'UF_CRM_1438076495' => $order_info['shipping_method'],
+				'UF_CRM_1438076500' => $order_info['payment_method'],
+				'COMMENTS' => "<ol>".$protucts_txt."</ol><br><b style='color:red;'>Сумма заказа с учётом доставки: ".$order_info['total']."</b><br>-------------------------------------------------------------------------------------<br>".$order_info['comment']."<br>-------------------------------------------------------------------------------------",
+			);
+			define('BITRIX24_CRM_HOST', 'goroddom.bitrix24.ru'); // your CRM domain name
+			define('BITRIX24_CRM_PORT', '443'); // CRM server port
+			define('BITRIX24_CRM_PATH', '/crm/configs/import/lead.php'); // CRM server REST service path
+
+			// CRM server authorization data
+			define('BITRIX24_CRM_LOGIN', 'my@email.com'); // login of a CRM user able to manage leads
+			define('BITRIX24_CRM_PASSWORD', 'pass'); // password of a CRM user
+			//define('BITRIX24_CRM_AUTH', 'authorization hash'); // authorization hash
+			if (defined('BITRIX24_CRM_AUTH')){
+				$postData['AUTH'] = BITRIX24_CRM_AUTH;
+			}else{
+				$postData['LOGIN'] = BITRIX24_CRM_LOGIN;
+				$postData['PASSWORD'] = BITRIX24_CRM_PASSWORD;
+			}
+			$fp = fsockopen("ssl://".BITRIX24_CRM_HOST, BITRIX24_CRM_PORT, $errno, $errstr, 30);
+			if ($fp){
+				// prepare POST data
+				$strPostData = '';
+				foreach ($postData as $key => $value)
+					$strPostData .= ($strPostData == '' ? '' : '&').$key.'='.urlencode($value);
+				file_put_contents("logs", $strPostData);
+
+				// prepare POST headers
+				$str = "POST ".BITRIX24_CRM_PATH." HTTP/1.0\r\n";
+				$str .= "Host: ".BITRIX24_CRM_HOST."\r\n";
+				$str .= "Content-Type: application/x-www-form-urlencoded\r\n";
+				$str .= "Content-Length: ".strlen($strPostData)."\r\n";
+				$str .= "Connection: close\r\n\r\n";
+
+				$str .= $strPostData;
+
+				// send POST to CRM
+				fwrite($fp, $str);
+
+				// get CRM headersOD
+				$result = '';
+				while (!feof($fp))
+				{
+					$result .= fgets($fp, 128);
+				}
+				fclose($fp);
+
+				// cut response headers
+				$response = explode("\r\n\r\n", $result);
+
+				$output = '<pre>'.print_r($response[1], 1).'</pre>';
+			}
+
+			]]></add>
+		</operation>
+		<operation>
+			<search><![CDATA['value' => (utf8_strlen($value) > 20 ? utf8_substr($value, 0, 20) . '..' : $value)]]></search>
+			<add position="before"><![CDATA[
+				'original_value'  => $option['value'],
+			]]></add>
+		</operation>
+		<operation>
+			<search><![CDATA['option'   => $option_data,]]></search>
+			<add position="before"><![CDATA[
+				'product_id'  => $product['product_id'],
+			]]></add>
+		</operation>
+	</file>
+</modification>
